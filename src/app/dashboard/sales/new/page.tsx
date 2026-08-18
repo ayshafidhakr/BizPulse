@@ -18,19 +18,27 @@ interface Customer {
     total_credit: number;
 }
 
+interface SaleItem {
+    productId: string;
+    productName: string;
+    sellingPrice: number;
+    maxStock: number;
+    quantity: number;
+}
+
 export default function NewSalePage() {
     const [products, setProducts] = useState<Product[]>([]);
     const [customers, setCustomers] = useState<Customer[]>([]);
+    const [saleItems, setSaleItems] = useState<SaleItem[]>([]);
     const [selectedProduct, setSelectedProduct] = useState("");
     const [selectedCustomer, setSelectedCustomer] = useState("");
-    const [quantity, setQuantity] = useState("1");
     const [paymentStatus, setPaymentStatus] = useState("paid");
+    const [saleDate, setSaleDate] = useState("");
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
     const [bizId, setBizId] = useState("");
-    const [saleDate, setSaleDate] = useState("");
 
-    // New customer inline form
+    // New customer
     const [showNewCustomer, setShowNewCustomer] = useState(false);
     const [newCustomerName, setNewCustomerName] = useState("");
     const [newCustomerPhone, setNewCustomerPhone] = useState("");
@@ -73,10 +81,52 @@ export default function NewSalePage() {
         load();
     }, []);
 
-    const selectedProductData = products.find((p) => p.id === selectedProduct);
-    const totalAmount = selectedProductData
-        ? selectedProductData.selling_price * parseInt(quantity || "1")
-        : 0;
+    // Add product to sale
+    function handleAddItem() {
+        if (!selectedProduct) return;
+
+        const product = products.find((p) => p.id === selectedProduct);
+        if (!product) return;
+
+        // Check if already in list
+        const exists = saleItems.find((i) => i.productId === selectedProduct);
+        if (exists) {
+            setError("This product is already added. Change the quantity below.");
+            return;
+        }
+
+        setSaleItems((prev) => [
+            ...prev,
+            {
+                productId: product.id,
+                productName: product.name,
+                sellingPrice: product.selling_price,
+                maxStock: product.stock_quantity,
+                quantity: 1,
+            },
+        ]);
+        setSelectedProduct("");
+        setError("");
+    }
+
+    function handleQtyChange(productId: string, qty: number) {
+        setSaleItems((prev) =>
+            prev.map((item) =>
+                item.productId === productId
+                    ? { ...item, quantity: Math.min(Math.max(1, qty), item.maxStock) }
+                    : item
+            )
+        );
+    }
+
+    function handleRemoveItem(productId: string) {
+        setSaleItems((prev) => prev.filter((i) => i.productId !== productId));
+    }
+
+    const totalAmount = saleItems.reduce(
+        (sum, item) => sum + item.sellingPrice * item.quantity,
+        0
+    );
 
     async function handleCreateCustomer() {
         if (!newCustomerName.trim()) {
@@ -88,7 +138,6 @@ export default function NewSalePage() {
         setCustomerError("");
 
         const supabase = createClient();
-
         const { data, error } = await supabase
             .from("customers")
             .insert({
@@ -107,7 +156,6 @@ export default function NewSalePage() {
         }
 
         if (data) {
-            // Add to local list and auto select
             setCustomers((prev) => [...prev, data]);
             setSelectedCustomer(data.id);
             setShowNewCustomer(false);
@@ -119,18 +167,8 @@ export default function NewSalePage() {
     }
 
     async function handleSale() {
-        if (!selectedProduct || !quantity) {
-            setError("Please select a product and quantity.");
-            return;
-        }
-
-        if (
-            selectedProductData &&
-            parseInt(quantity) > selectedProductData.stock_quantity
-        ) {
-            setError(
-                `Only ${selectedProductData.stock_quantity} units available in stock.`
-            );
+        if (saleItems.length === 0) {
+            setError("Please add at least one product.");
             return;
         }
 
@@ -139,48 +177,51 @@ export default function NewSalePage() {
             return;
         }
 
+        // Validate stock
+        for (const item of saleItems) {
+            if (item.quantity > item.maxStock) {
+                setError(`Only ${item.maxStock} units of ${item.productName} available.`);
+                return;
+            }
+        }
+
         setLoading(true);
         setError("");
 
         const supabase = createClient();
+        const saleDateISO = saleDate
+            ? new Date(saleDate).toISOString()
+            : new Date().toISOString();
 
-        // Step 1 — Record the sale
-        const { error: saleError } = await supabase.from("sales").insert({
-            business_id: bizId,
-            product_id: selectedProduct,
-            customer_id: selectedCustomer || null,
-            quantity: parseInt(quantity),
-            total_amount: totalAmount,
-            payment_status: paymentStatus,
-            sale_date: saleDate ? new Date(saleDate).toISOString() : new Date().toISOString(),
-        });
+        // Insert all sale items
+        for (const item of saleItems) {
+            const { error: saleError } = await supabase.from("sales").insert({
+                business_id: bizId,
+                product_id: item.productId,
+                customer_id: selectedCustomer || null,
+                quantity: item.quantity,
+                total_amount: item.sellingPrice * item.quantity,
+                payment_status: paymentStatus,
+                sale_date: saleDateISO,
+            });
 
-        if (saleError) {
-            setError(saleError.message);
-            setLoading(false);
-            return;
+            if (saleError) {
+                setError(saleError.message);
+                setLoading(false);
+                return;
+            }
+
+            // Deduct stock
+            await supabase
+                .from("products")
+                .update({ stock_quantity: item.maxStock - item.quantity })
+                .eq("id", item.productId);
         }
 
-        // Step 2 — Deduct stock
-        const { error: stockError } = await supabase
-            .from("products")
-            .update({
-                stock_quantity:
-                    selectedProductData!.stock_quantity - parseInt(quantity),
-            })
-            .eq("id", selectedProduct);
-
-        if (stockError) {
-            setError(stockError.message);
-            setLoading(false);
-            return;
-        }
-
-        // Step 3 — Update credit if khata sale
+        // Update credit if khata
         if (paymentStatus === "credit" && selectedCustomer) {
-            const currentCustomer = customers.find((c) => c.id === selectedCustomer);
-            const currentCredit = currentCustomer?.total_credit ?? 0;
-
+            const customer = customers.find((c) => c.id === selectedCustomer);
+            const currentCredit = customer?.total_credit ?? 0;
             await supabase
                 .from("customers")
                 .update({ total_credit: currentCredit + totalAmount })
@@ -201,7 +242,7 @@ export default function NewSalePage() {
                     ← Back to Sales
                 </Link>
                 <h1 className="text-3xl font-bold mt-3">Record Sale</h1>
-                <p className="text-gray-400 mt-1">Add a new sales transaction.</p>
+                <p className="text-gray-400 mt-1">Add one or more products to this sale.</p>
             </div>
 
             {error && (
@@ -212,38 +253,100 @@ export default function NewSalePage() {
 
             <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 flex flex-col gap-5">
 
-                {/* Product */}
-                <div className="flex flex-col gap-1">
-                    <label className="text-sm text-gray-400">
-                        Product <span className="text-red-400">*</span>
-                    </label>
-                    <select
-                        value={selectedProduct}
-                        onChange={(e) => setSelectedProduct(e.target.value)}
-                        className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-emerald-500"
-                    >
-                        <option value="">Select product...</option>
-                        {products.map((p) => (
-                            <option key={p.id} value={p.id}>
-                                {p.name} — ₹{p.selling_price} ({p.stock_quantity} in stock)
-                            </option>
-                        ))}
-                    </select>
+                {/* Add Product Row */}
+                <div className="flex flex-col gap-2">
+                    <label className="text-sm text-gray-400 font-medium">Add Products</label>
+                    <div className="flex gap-2">
+                        <select
+                            value={selectedProduct}
+                            onChange={(e) => setSelectedProduct(e.target.value)}
+                            className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-emerald-500"
+                        >
+                            <option value="">Select product...</option>
+                            {products
+                                .filter((p) => !saleItems.find((i) => i.productId === p.id))
+                                .map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                        {p.name} — ₹{p.selling_price} ({p.stock_quantity} in stock)
+                                    </option>
+                                ))}
+                        </select>
+                        <button
+                            onClick={handleAddItem}
+                            disabled={!selectedProduct}
+                            className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white px-4 py-2.5 rounded-lg font-semibold text-sm transition"
+                        >
+                            + Add
+                        </button>
+                    </div>
                 </div>
 
-                {/* Quantity */}
-                <div className="flex flex-col gap-1">
-                    <label className="text-sm text-gray-400">
-                        Quantity <span className="text-red-400">*</span>
-                    </label>
-                    <input
-                        type="number"
-                        min="1"
-                        value={quantity}
-                        onChange={(e) => setQuantity(e.target.value)}
-                        className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-emerald-500"
-                    />
-                </div>
+                {/* Sale Items List */}
+                {saleItems.length > 0 && (
+                    <div className="flex flex-col gap-2">
+                        <label className="text-sm text-gray-400 font-medium">
+                            Items in this sale ({saleItems.length})
+                        </label>
+                        <div className="flex flex-col gap-2">
+                            {saleItems.map((item) => (
+                                <div
+                                    key={item.productId}
+                                    className="bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 flex items-center gap-3"
+                                >
+                                    {/* Product name */}
+                                    <div className="flex-1">
+                                        <p className="font-medium text-sm">{item.productName}</p>
+                                        <p className="text-gray-500 text-xs">
+                                            ₹{item.sellingPrice} each • max {item.maxStock}
+                                        </p>
+                                    </div>
+
+                                    {/* Quantity controls */}
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={() => handleQtyChange(item.productId, item.quantity - 1)}
+                                            className="w-7 h-7 rounded-lg bg-gray-700 hover:bg-gray-600 text-white flex items-center justify-center font-bold transition"
+                                        >
+                                            −
+                                        </button>
+                                        <span className="w-8 text-center font-semibold text-sm">
+                                            {item.quantity}
+                                        </span>
+                                        <button
+                                            onClick={() => handleQtyChange(item.productId, item.quantity + 1)}
+                                            className="w-7 h-7 rounded-lg bg-gray-700 hover:bg-gray-600 text-white flex items-center justify-center font-bold transition"
+                                        >
+                                            +
+                                        </button>
+                                    </div>
+
+                                    {/* Line total */}
+                                    <span className="text-emerald-400 font-semibold text-sm w-20 text-right">
+                                        ₹{(item.sellingPrice * item.quantity).toLocaleString("en-IN")}
+                                    </span>
+
+                                    {/* Remove */}
+                                    <button
+                                        onClick={() => handleRemoveItem(item.productId)}
+                                        className="text-gray-600 hover:text-red-400 transition text-lg leading-none"
+                                    >
+                                        ×
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Total */}
+                        <div className="bg-emerald-900/20 border border-emerald-800/40 rounded-xl px-4 py-3 flex items-center justify-between">
+                            <span className="text-gray-400 text-sm">
+                                {saleItems.reduce((s, i) => s + i.quantity, 0)} items total
+                            </span>
+                            <span className="text-emerald-300 font-bold text-lg">
+                                ₹{totalAmount.toLocaleString("en-IN")}
+                            </span>
+                        </div>
+                    </div>
+                )}
 
                 {/* Payment Status */}
                 <div className="flex flex-col gap-2">
@@ -273,7 +376,7 @@ export default function NewSalePage() {
                     </div>
                 </div>
 
-                {/* Customer Section — only shown for credit */}
+                {/* Customer — only for credit */}
                 {paymentStatus === "credit" && (
                     <div className="flex flex-col gap-3">
                         <div className="flex items-center justify-between">
@@ -292,7 +395,6 @@ export default function NewSalePage() {
                             </button>
                         </div>
 
-                        {/* Existing customer dropdown */}
                         {!showNewCustomer && (
                             <select
                                 value={selectedCustomer}
@@ -311,37 +413,29 @@ export default function NewSalePage() {
                             </select>
                         )}
 
-                        {/* Inline new customer form */}
                         {showNewCustomer && (
                             <div className="bg-gray-800/50 border border-emerald-800/40 rounded-xl p-4 flex flex-col gap-3">
-                                <p className="text-sm text-emerald-400 font-medium">
-                                    🆕 Create New Customer
-                                </p>
-
+                                <p className="text-sm text-emerald-400 font-medium">🆕 Create New Customer</p>
                                 {customerError && (
                                     <p className="text-red-400 text-xs bg-red-900/20 border border-red-800 rounded-lg px-3 py-2">
                                         {customerError}
                                     </p>
                                 )}
-
-                                <div className="flex flex-col gap-2">
-                                    <input
-                                        type="text"
-                                        value={newCustomerName}
-                                        onChange={(e) => setNewCustomerName(e.target.value)}
-                                        placeholder="Customer name *"
-                                        className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500"
-                                        autoFocus
-                                    />
-                                    <input
-                                        type="tel"
-                                        value={newCustomerPhone}
-                                        onChange={(e) => setNewCustomerPhone(e.target.value)}
-                                        placeholder="Phone number (optional)"
-                                        className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500"
-                                    />
-                                </div>
-
+                                <input
+                                    type="text"
+                                    value={newCustomerName}
+                                    onChange={(e) => setNewCustomerName(e.target.value)}
+                                    placeholder="Customer name *"
+                                    className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500"
+                                    autoFocus
+                                />
+                                <input
+                                    type="tel"
+                                    value={newCustomerPhone}
+                                    onChange={(e) => setNewCustomerPhone(e.target.value)}
+                                    placeholder="Phone number (optional)"
+                                    className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500"
+                                />
                                 <button
                                     onClick={handleCreateCustomer}
                                     disabled={creatingCustomer || !newCustomerName.trim()}
@@ -352,7 +446,6 @@ export default function NewSalePage() {
                             </div>
                         )}
 
-                        {/* Show selected customer confirmation */}
                         {selectedCustomer && !showNewCustomer && (
                             <div className="bg-emerald-900/20 border border-emerald-800/40 rounded-lg px-4 py-2.5 flex items-center gap-2">
                                 <span className="text-emerald-400 text-sm">✓</span>
@@ -361,17 +454,6 @@ export default function NewSalePage() {
                                 </p>
                             </div>
                         )}
-
-                        {selectedCustomer && showNewCustomer === false &&
-                            (customers.find((c) => c.id === selectedCustomer)?.total_credit ?? 0) > 0 && (
-                                <p className="text-yellow-400 text-xs">
-                                    ⚠️ This customer already has ₹
-                                    {customers
-                                        .find((c) => c.id === selectedCustomer)
-                                        ?.total_credit.toLocaleString("en-IN")}{" "}
-                                    pending
-                                </p>
-                            )}
                     </div>
                 )}
 
@@ -379,9 +461,7 @@ export default function NewSalePage() {
                 <div className="flex flex-col gap-1">
                     <div className="flex items-center justify-between">
                         <label className="text-sm text-gray-400">Sale Date & Time</label>
-                        <span className="text-xs text-gray-600">
-                            Leave empty to use current time
-                        </span>
+                        <span className="text-xs text-gray-600">Leave empty to use current time</span>
                     </div>
                     <input
                         type="datetime-local"
@@ -393,13 +473,10 @@ export default function NewSalePage() {
                     {saleDate && (
                         <div className="flex items-center justify-between">
                             <p className="text-emerald-400 text-xs">
-                                ✓ Sale will be recorded for{" "}
+                                ✓ Recording for{" "}
                                 {new Date(saleDate).toLocaleDateString("en-IN", {
-                                    day: "numeric",
-                                    month: "long",
-                                    year: "numeric",
-                                    hour: "2-digit",
-                                    minute: "2-digit",
+                                    day: "numeric", month: "long", year: "numeric",
+                                    hour: "2-digit", minute: "2-digit",
                                 })}
                             </p>
                             <button
@@ -411,26 +488,16 @@ export default function NewSalePage() {
                         </div>
                     )}
                 </div>
-
-                {/* Total Preview */}
-                {selectedProduct && (
-                    <div className="bg-emerald-900/20 border border-emerald-800/40 rounded-xl px-4 py-3">
-                        <p className="text-emerald-300 text-sm">
-                            Total Amount:{" "}
-                            <span className="font-bold text-lg">
-                                ₹{totalAmount.toLocaleString("en-IN")}
-                            </span>
-                        </p>
-                    </div>
-                )}
             </div>
 
             <button
                 onClick={handleSale}
-                disabled={loading}
+                disabled={loading || saleItems.length === 0}
                 className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white py-3 rounded-xl font-semibold transition shadow-lg shadow-emerald-900/30"
             >
-                {loading ? "Recording..." : "Record Sale →"}
+                {loading
+                    ? "Recording..."
+                    : `Record Sale${saleItems.length > 0 ? ` — ₹${totalAmount.toLocaleString("en-IN")}` : ""} →`}
             </button>
         </div>
     );
