@@ -17,7 +17,7 @@ interface Sale {
     total_amount: number;
     quantity: number;
     sale_date: string;
-    products: { name: string } | null;
+    products: { name: string } | { name: string }[] | null;
 }
 
 interface Payment {
@@ -57,7 +57,7 @@ export default function CustomerDetailPage() {
                 .eq("payment_status", "credit")
                 .order("sale_date", { ascending: false });
 
-            if (salesData) setSales(salesData as any);
+            if (salesData) setSales(salesData as unknown as Sale[]);
 
             // Get payments
             const { data: paymentsData } = await supabase
@@ -239,7 +239,9 @@ export default function CustomerDetailPage() {
                                 className="flex items-center justify-between px-5 py-4 border-b border-gray-800/50"
                             >
                                 <div>
-                                    <p className="font-medium">{sale.products?.name ?? "Product"}</p>
+                                    <p className="font-medium">
+                                        {(Array.isArray(sale.products) ? sale.products[0]?.name : sale.products?.name) ?? "Product"}
+                                    </p>
                                     <p className="text-gray-500 text-xs">
                                         Qty: {sale.quantity} •{" "}
                                         {new Date(sale.sale_date).toLocaleDateString("en-IN", {

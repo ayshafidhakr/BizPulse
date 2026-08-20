@@ -19,7 +19,15 @@ interface TopProduct {
 }
 
 export default function DashboardPage() {
-    const [business, setBusiness] = useState<any>(null);
+    // const [business, setBusiness] = useState<any>(null);
+    interface Business {
+        id: string;
+        business_name: string;
+        business_type: string;
+        owner_name: string;
+    }
+
+    const [business, setBusiness] = useState<Business | null>(null);
     const [stats, setStats] = useState({
         todaySales: 0,
         totalProducts: 0,
@@ -117,8 +125,12 @@ export default function DashboardPage() {
 
                 if (allSales) {
                     const productMap: Record<string, number> = {};
-                    allSales.forEach((s: any) => {
-                        const name = s.products?.name ?? "Unknown";
+                    allSales.forEach((s) => {
+                        const product = Array.isArray(s.products)
+                            ? s.products[0]
+                            : s.products;
+
+                        const name = product?.name ?? "Unknown";
                         productMap[name] = (productMap[name] ?? 0) + s.quantity;
                     });
 
@@ -194,7 +206,7 @@ export default function DashboardPage() {
                     {business?.owner_name?.split(" ")[0] ?? "there"} 👋
                 </h1>
                 <p className="text-gray-400 mt-1">
-                    Here's your business pulse for today —{" "}
+                    Here&apos;s your business pulse for today —{" "}
                     {new Date().toLocaleDateString("en-IN", {
                         weekday: "long",
                         day: "numeric",
@@ -250,8 +262,8 @@ export default function DashboardPage() {
                                         borderRadius: "12px",
                                         color: "#fff",
                                     }}
-                                    formatter={(value: any) => [
-                                        `₹${value.toLocaleString("en-IN")}`,
+                                    formatter={(value) => [
+                                        `₹${Number(value).toLocaleString("en-IN")}`,
                                         "Revenue",
                                     ]}
                                 />
@@ -378,7 +390,7 @@ export default function DashboardPage() {
                 <div className="flex flex-col gap-1">
                     <h3 className="font-semibold text-lg">🤖 Ask your AI Business Assistant</h3>
                     <p className="text-gray-400 text-sm">
-                        "How much did I earn this week?" • "Which product sells most?" • "Who owes me money?"
+                        &quot;How much did I earn this week?&quot; • &quot;Which product sells most?&quot; • &quot;Who owes me money?&quot;
                     </p>
                 </div>
                 <Link

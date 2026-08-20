@@ -6,6 +6,25 @@ export const maxDuration = 60;
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
+interface SaleProduct {
+  name: string;
+  cost_price: number;
+}
+
+interface Sale {
+  total_amount: number;
+  quantity: number;
+  sale_date: string;
+  payment_status: string;
+  products: SaleProduct[];
+}
+
+interface Payment {
+  amount: number;
+  payment_date: string;
+  customers: { name: string }[];
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { question } = await req.json();
@@ -73,7 +92,7 @@ export async function POST(req: NextRequest) {
     // Build computed summary
     const totalRevenue = sales.reduce((s, r) => s + r.total_amount, 0);
     const totalCost = sales.reduce(
-      (s, r) => s + ((r.products as any)?.cost_price ?? 0) * r.quantity,
+      (s, r) => s + (r.products?.[0]?.cost_price ?? 0) * r.quantity,
       0
     );
     const totalProfit = totalRevenue - totalCost;
@@ -121,8 +140,8 @@ export async function POST(req: NextRequest) {
 
     // Product sales frequency
     const productSalesMap: Record<string, number> = {};
-    sales.forEach((s: any) => {
-      const name = s.products?.name ?? "Unknown";
+    sales.forEach((s: Sale) => {
+      const name = s.products?.[0]?.name ?? "Unknown";
       productSalesMap[name] = (productSalesMap[name] ?? 0) + s.quantity;
     });
     const topSellingProducts = Object.entries(productSalesMap)
@@ -162,10 +181,9 @@ ${customersWithCredit.map((c) => `- ${c.name}: ₹${c.total_credit.toLocaleStrin
 All Customers: ${customers.length}
 
 === RECENT SALES (Last 10) ===
-${sales.slice(0, 10).map((s: any) => `- ${s.products?.name ?? "Unknown"}: ₹${s.total_amount} (${s.payment_status}) on ${new Date(s.sale_date).toLocaleDateString("en-IN")}`).join("\n") || "No sales yet"}
-
+${sales.slice(0, 10).map((s: Sale) => `- ${s.products?.[0]?.name ?? "Unknown"}: ₹${s.total_amount} (${s.payment_status}) on ${new Date(s.sale_date).toLocaleDateString("en-IN")}`).join("\n") || "No sales yet"}
 === RECENT PAYMENTS RECEIVED ===
-${payments.slice(0, 5).map((p: any) => `- ${p.customers?.name ?? "Unknown"}: ₹${p.amount} on ${new Date(p.payment_date).toLocaleDateString("en-IN")}`).join("\n") || "No payments yet"}
+${payments.slice(0, 5).map((p: Payment) => `- ${p.customers?.[0]?.name ?? "Unknown"}: ₹${p.amount} on ${new Date(p.payment_date).toLocaleDateString("en-IN")}`).join("\n") || "No payments yet"}
 `;
 
     const response = await groq.chat.completions.create({

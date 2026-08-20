@@ -19,6 +19,30 @@ const suggestions = [
     "What's my best performing product?",
 ];
 
+interface SpeechRecognitionEvent extends Event {
+    results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionInstance {
+    lang: string;
+    interimResults: boolean;
+    maxAlternatives: number;
+    onstart: () => void;
+    onend: () => void;
+    onresult: (event: SpeechRecognitionEvent) => void;
+    onerror: () => void;
+    start: () => void;
+}
+
+interface SpeechRecognitionConstructor {
+    new(): SpeechRecognitionInstance;
+}
+
+interface WindowWithSpeechRecognition extends Window {
+    SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
+}
+
 export default function AssistantPage() {
     const [messages, setMessages] = useState<Message[]>([
         {
@@ -37,26 +61,31 @@ export default function AssistantPage() {
     }, [messages]);
 
     function handleVoice() {
-        if (!("webkitSpeechRecognition" in window || "SpeechRecognition" in window)) {
+        const speechWindow = window as WindowWithSpeechRecognition;
+
+        const SpeechRecognition =
+            speechWindow.SpeechRecognition ||
+            speechWindow.webkitSpeechRecognition;
+
+        if (!SpeechRecognition) {
             alert("Voice input is not supported in your browser. Try Chrome.");
             return;
         }
 
-        const SpeechRecognition =
-            (window as any).SpeechRecognition ||
-            (window as any).webkitSpeechRecognition;
-
         const recognition = new SpeechRecognition();
+
         recognition.lang = "en-IN";
         recognition.interimResults = false;
         recognition.maxAlternatives = 1;
 
         recognition.onstart = () => setListening(true);
         recognition.onend = () => setListening(false);
-        recognition.onresult = (event: any) => {
+
+        recognition.onresult = (event: SpeechRecognitionEvent) => {
             const transcript = event.results[0][0].transcript;
             setInput(transcript);
         };
+
         recognition.onerror = () => setListening(false);
         recognition.start();
     }

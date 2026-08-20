@@ -45,13 +45,18 @@ export default function SalesPage() {
                 .order("sale_date", { ascending: false });
 
             if (data) {
-                setSales(data as any);
+                setSales(
+                    data as unknown as Sale[]
+                );
 
                 //TODAY'S TOTAL
                 const today = new Date();
                 today.setHours(0, 0, 0, 0);
                 const todaySales = data.filter(
                     (s) => new Date(s.sale_date) >= today
+                );
+                setTodayTotal(
+                    todaySales.reduce((sum, s) => sum + s.total_amount, 0)
                 );
 
                 //THIS WEEK'S TOTAL
@@ -88,13 +93,13 @@ export default function SalesPage() {
             {/* Stats */}
             <div className="grid grid-cols-2 gap-4">
                 <div className="bg-gradient-to-br from-emerald-900/30 to-emerald-800/10 border border-emerald-800/50 rounded-2xl p-5 flex flex-col gap-1">
-                    <p className="text-gray-400 text-sm">Today's Revenue</p>
+                    <p className="text-gray-400 text-sm">Today&apos;s Revenue</p>
                     <p className="text-3xl font-bold text-emerald-400">
                         ₹{todayTotal.toLocaleString("en-IN")}
                     </p>
                 </div>
                 <div className="bg-gradient-to-br from-teal-900/30 to-teal-800/10 border border-teal-800/50 rounded-2xl p-5 flex flex-col gap-1">
-                    <p className="text-gray-400 text-sm">This Week's Revenue</p>
+                    <p className="text-gray-400 text-sm">This Week&apos;s Revenue</p>
                     <p className="text-3xl font-bold text-teal-400">
                         ₹{weekTotal.toLocaleString("en-IN")}
                     </p>
@@ -156,8 +161,8 @@ export default function SalesPage() {
                             </span>
                             <span
                                 className={`text-xs px-2 py-1 rounded-full border w-fit ${sale.payment_status === "paid"
-                                        ? "bg-emerald-900/30 border-emerald-700 text-emerald-300"
-                                        : "bg-yellow-900/30 border-yellow-700 text-yellow-300"
+                                    ? "bg-emerald-900/30 border-emerald-700 text-emerald-300"
+                                    : "bg-yellow-900/30 border-yellow-700 text-yellow-300"
                                     }`}
                             >
                                 {sale.payment_status === "paid" ? "Paid" : "Credit"}

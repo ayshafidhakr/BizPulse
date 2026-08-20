@@ -47,48 +47,60 @@ export default function ReportsPage() {
         getBiz();
     }, []);
 
+    // useEffect(() => {
+    //     if (!bizId) return;
+    //     fetchSales();
+    // }, [bizId, range]);
+
     useEffect(() => {
         if (!bizId) return;
+
+        const fetchSales = async () => {
+            setLoading(true);
+            const supabase = createClient();
+
+            let query = supabase
+                .from("sales")
+                .select(`
+                id, total_amount, quantity, payment_status, sale_date,
+                products(name, cost_price, selling_price),
+                customers(name)
+            `)
+                .eq("business_id", bizId)
+                .order("sale_date", { ascending: false });
+
+            const now = new Date();
+
+            if (range === "today") {
+                const start = new Date();
+                start.setHours(0, 0, 0, 0);
+                query = query.gte("sale_date", start.toISOString());
+            } else if (range === "week") {
+                const start = new Date();
+                start.setDate(now.getDate() - 7);
+                query = query.gte("sale_date", start.toISOString());
+            } else if (range === "month") {
+                const start = new Date();
+                start.setMonth(now.getMonth() - 1);
+                query = query.gte("sale_date", start.toISOString());
+            } else if (range === "year") {
+                const start = new Date();
+                start.setFullYear(now.getFullYear() - 1);
+                query = query.gte("sale_date", start.toISOString());
+            }
+
+            const { data } = await query;
+
+            if (data) {
+                setSales(data as unknown as SaleRow[]);
+            }
+
+            setLoading(false);
+        };
+
         fetchSales();
     }, [bizId, range]);
 
-    async function fetchSales() {
-        setLoading(true);
-        const supabase = createClient();
-
-        let query = supabase
-            .from("sales")
-            .select(`
-        id, total_amount, quantity, payment_status, sale_date,
-        products(name, cost_price, selling_price),
-        customers(name)
-      `)
-            .eq("business_id", bizId)
-            .order("sale_date", { ascending: false });
-
-        const now = new Date();
-        if (range === "today") {
-            const start = new Date();
-            start.setHours(0, 0, 0, 0);
-            query = query.gte("sale_date", start.toISOString());
-        } else if (range === "week") {
-            const start = new Date();
-            start.setDate(now.getDate() - 7);
-            query = query.gte("sale_date", start.toISOString());
-        } else if (range === "month") {
-            const start = new Date();
-            start.setMonth(now.getMonth() - 1);
-            query = query.gte("sale_date", start.toISOString());
-        } else if (range === "year") {
-            const start = new Date();
-            start.setFullYear(now.getFullYear() - 1);
-            query = query.gte("sale_date", start.toISOString());
-        }
-
-        const { data } = await query;
-        if (data) setSales(data as any);
-        setLoading(false);
-    }
 
     // ── Computed Stats ──────────────────────────────
     const totalRevenue = sales.reduce((s, r) => s + r.total_amount, 0);
@@ -166,7 +178,7 @@ export default function ReportsPage() {
     const gstTotalWithTax = gstTaxableAmount + gstAmount;
 
     const gstProductMap: Record<string, { units: number; amount: number }> = {};
-    gstSales.forEach((s: any) => {
+    gstSales.forEach((s) => {
         const name = s.products?.name ?? "Unknown";
         if (!gstProductMap[name]) gstProductMap[name] = { units: 0, amount: 0 };
         gstProductMap[name].units += s.quantity;
@@ -368,7 +380,7 @@ export default function ReportsPage() {
                                             <YAxis tick={{ fill: "#6b7280", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `₹${v}`} />
                                             <Tooltip
                                                 contentStyle={{ backgroundColor: "#111827", border: "1px solid #1f2937", borderRadius: "12px", color: "#fff" }}
-                                                formatter={(v: any) => [`₹${v.toLocaleString("en-IN")}`, "Revenue"]}
+                                                formatter={(v) => [`₹${Number(v).toLocaleString("en-IN")}`, "Revenue"]}
                                             />
                                             <Line type="monotone" dataKey="revenue" stroke="#10b981" strokeWidth={2.5} dot={{ fill: "#10b981", r: 4 }} activeDot={{ r: 6 }} />
                                         </LineChart>
@@ -387,7 +399,7 @@ export default function ReportsPage() {
                                                 </Pie>
                                                 <Tooltip
                                                     contentStyle={{ backgroundColor: "#111827", border: "1px solid #1f2937", borderRadius: "12px", color: "#fff" }}
-                                                    formatter={(v: any) => [`₹${v.toLocaleString("en-IN")}`]}
+                                                    formatter={(v) => [`₹${Number(v).toLocaleString("en-IN")}`]}
                                                 />
                                                 <Legend formatter={(value) => <span style={{ color: "#9ca3af", fontSize: 12 }}>{value}</span>} />
                                             </PieChart>
