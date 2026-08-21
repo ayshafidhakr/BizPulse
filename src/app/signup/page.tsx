@@ -45,13 +45,13 @@ export default function SignupPage() {
                         <p className="text-gray-400 mt-2 text-sm">
                             We sent a confirmation link to{" "}
                             <span className="text-emerald-400 font-medium">{email}</span>.
-                            Click it to activate your account and you'll be redirected
+                            Click it to activate your account and you&apos;ll be redirected
                             to your dashboard automatically.
                         </p>
                     </div>
                     <div className="bg-emerald-900/20 border border-emerald-800/50 rounded-xl px-4 py-3 w-full">
                         <p className="text-emerald-300 text-xs">
-                            ✓ Once confirmed you'll be taken straight to your dashboard
+                            ✓ Once confirmed you&apos;ll be taken straight to your dashboard
                         </p>
                     </div>
                     <Link
