@@ -17,17 +17,52 @@ export default function SignupPage() {
     async function handleSignup() {
         setLoading(true);
         setError("");
-        setSuccess(false);
+
         const { error } = await supabase.auth.signUp({
             email,
             password,
+            options: {
+                emailRedirectTo: `${window.location.origin}/auth/callback`,
+            },
         });
+
         if (error) {
             setError(error.message);
             setLoading(false);
         } else {
-            router.push("/onboarding");
+            setSuccess(true);
+            setLoading(false);
         }
+    }
+
+    if (success) {
+        return (
+            <main className="min-h-screen bg-gray-950 flex items-center justify-center px-4">
+                <div className="w-full max-w-md bg-gray-900 border border-gray-800 rounded-2xl p-8 flex flex-col items-center gap-6 text-center">
+                    <span className="text-5xl">📧</span>
+                    <div>
+                        <h1 className="text-2xl font-bold">Check your email!</h1>
+                        <p className="text-gray-400 mt-2 text-sm">
+                            We sent a confirmation link to{" "}
+                            <span className="text-emerald-400 font-medium">{email}</span>.
+                            Click it to activate your account and you'll be redirected
+                            to your dashboard automatically.
+                        </p>
+                    </div>
+                    <div className="bg-emerald-900/20 border border-emerald-800/50 rounded-xl px-4 py-3 w-full">
+                        <p className="text-emerald-300 text-xs">
+                            ✓ Once confirmed you'll be taken straight to your dashboard
+                        </p>
+                    </div>
+                    <Link
+                        href="/login"
+                        className="text-sm text-gray-500 hover:text-gray-300 transition"
+                    >
+                        Already confirmed? Login →
+                    </Link>
+                </div>
+            </main>
+        );
     }
 
     return (
